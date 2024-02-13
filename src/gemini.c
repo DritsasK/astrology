@@ -67,23 +67,23 @@ static int create_ordinary_tcp_connection(const char *hostname, gemini_status_e 
  * Assigns a type to the current line based on its prefix characters
  * Will gracefully handle the cases in which some tokens appear right at the end of the buffer
  */
-static gemtext_line_e get_gemtext_type_from_line(char *buffer)
+static gemtext_line_e get_gemtext_type_from_line(char *line)
 {
-    switch (buffer[0])
+    switch (line[0])
     {
     case '>': return GEMTEXT_BLOCKQUOTE;
     case '*': return GEMTEXT_LIST_ITEM;
 
     case '#':
         // Collect the level of the heading and preventing an out-of-bounds runtime error
-        if (buffer[1] && buffer[2] == '#') return GEMTEXT_HEADING_THREE;
-        if (buffer[1] == '#') return GEMTEXT_HEADING_TWO;
+        if (line[1] && line[2] == '#') return GEMTEXT_HEADING_THREE;
+        if (line[1] == '#') return GEMTEXT_HEADING_TWO;
 
         return GEMTEXT_HEADING_ONE;
     }
 
-    if (!strncmp("=>", buffer, 2))  return GEMTEXT_LINK;
-    if (!strncmp("```", buffer, 3)) return GEMTEXT_PREFORMATTED;
+    if (!strncmp("=>", line, 2))  return GEMTEXT_LINK;
+    if (!strncmp("```", line, 3)) return GEMTEXT_PREFORMATTED;
 
     // If nothing special was recognized, it must be a plain paragraph
     return GEMTEXT_PARAGRAPH;
@@ -141,19 +141,29 @@ void gemini_document_parse_content(gemini_document_t *document)
 
 void gemini_document_collect_content(gemini_document_t *document, SSL *ssl)
 {
+    size_t chunk_size = 1024;
+    
     // First, just read of all the content into a dynamic array
     // It will make parsing considerably easier
-    document->content = dyn_array_create(1024, sizeof(char));
-    char io_buffer[1024];
-
+    document->content = dyn_array_create(chunk_size, sizeof(char));
+    
     for (;;)
     {
-        int bytes_read = SSL_read(ssl, io_buffer, sizeof(io_buffer));
+        size_t length = DYN_ARRAY_LENGTH(document->content);
+        size_t remaining_space = *DYN_ARRAY_GET_ATTRIBUTE(document->content, DYN_ARRAY_CAPACITY) - length;
+
+        if (remaining_space < chunk_size)
+        {
+            // This is really similar to how Golang works
+            document->content = dyn_array_resize_to_fit(document->content, length + chunk_size);
+        }
+
+        // This is more complicated but certainly faster that creating an intermediate buffer
+        int bytes_read = SSL_read(ssl, document->content + length, chunk_size);
         if (bytes_read <= 0)
             break;
 
-        // This is really similar to how Golang works
-        document->content = dyn_array_append_buffer(document->content, io_buffer, bytes_read);
+        *DYN_ARRAY_GET_ATTRIBUTE(document->content, DYN_ARRAY_LENGTH) += bytes_read;
     }
 }
 
@@ -180,25 +190,40 @@ gemini_document_t* gemini_fetch_document(SSL_CTX *ctx, char *gemini_url)
         goto fetch_failed;
     }
 
-    // The server expects a 1024 buffer indicating the page's URL
-    // A scheme should also be included. We're searching for gemtext
-    // It should also be terminated with a (Carriage Return + New Line Feed) sequence
-    char io_buffer[1024];
+    // The client needs to request a gemini page from the server.
+    // The limit is extracted from the specification. A scheme should also be included.
+    // The requset shall be terminated with a (Carriage Return + New Line Feed) sequence
+    char io_buffer[1024 + 3];
     sprintf(io_buffer, "%s\r\n", gemini_url);
     SSL_write(ssl, io_buffer, strlen(io_buffer));
 
     // Read and parse the server's response header
-    int bytes_read = SSL_read(ssl, io_buffer, sizeof(io_buffer));
-    io_buffer[bytes_read] = 0;
+    size_t header_length = 0;
 
-    char status[2];
-    char meta[1024];
-    if (sscanf(io_buffer, "%2s %s\r\n", status, meta) != 2)
+    do
+    {
+        // Continue reading until a new line character has been received
+        int bytes_read = SSL_read(ssl, io_buffer + header_length, sizeof(io_buffer));
+        if (bytes_read <= 0)
+            break;
+        
+        header_length += bytes_read;
+        
+    } while (io_buffer[header_length - 1] != '\n');
+
+    // If not even a status was received, something went wrong
+    if (header_length < 4)
     {
         document->status = GEMINI_HEADER_PARSING_FAILURE;
         goto fetch_failed;
     }
 
+    // Insert a NULL byte and parse into separate strings
+    io_buffer[header_length] = 0;
+    char status[2];
+    char meta[1024];
+    sscanf(io_buffer, "%2s %s\r\n", status, meta);
+    
     switch (status[0])
     {
     case '1':
@@ -233,16 +258,19 @@ gemini_document_t* gemini_fetch_document(SSL_CTX *ctx, char *gemini_url)
     }
 
     // If the status starts with a two, fetch the content
-    if (strcmp(meta, "text/gemini"))
+    // If <META> is an empty string, text/gemini is assumed
+    if (header_length < 6 || !strncmp(meta, "text/gemini", 9))
+    {
+        gemini_document_collect_content(document, ssl);
+        gemini_document_parse_content(document);
+        document->status = GEMINI_OK;
+    }
+    else
     {
         document->status = GEMINI_NOT_GEMTEXT;
         goto fetch_failed;
     }
-    
-    gemini_document_collect_content(document, ssl);
-    gemini_document_parse_content(document);
-    document->status = GEMINI_OK;
-    
+        
 fetch_failed:
     SSL_shutdown(ssl);
     SSL_free(ssl);

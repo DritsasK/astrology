@@ -40,12 +40,12 @@ typedef void* dyn_array_t;
 
 dyn_array_t dyn_array_create(size_t initial_capacity, size_t item_size);
 
-// Will copy the contents of the buffer directly into the array, incrementing the length accordingly
-// The dynamic array needs to be reassigned in case that it has been silently resized
-dyn_array_t dyn_array_append_buffer(dyn_array_t array, void *buffer, int total_items);
+// Prepares the addition of items into the array by allocating enough memory
+// Will resize if needed, so a reassignment is once needed
+dyn_array_t dyn_array_resize_to_fit(dyn_array_t array, size_t total_items);
 
-// Prepares the addition of a new item into the array
-// Will resize if needed, so a reassignment is once again needed
+// Will make sure that there is enough memory to create a new item
+// Will then increment the array's length. The item should the be written via DYN_ARRAY_GET_LAST
 dyn_array_t dyn_array_prepare_new_item(dyn_array_t array);
 
 void dyn_array_destroy(dyn_array_t array);

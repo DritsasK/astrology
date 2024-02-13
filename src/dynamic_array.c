@@ -34,14 +34,13 @@ dyn_array_t dyn_array_create(size_t initial_capacity, size_t item_size)
     return array + DYN_ARRAY_HEADER_SIZE;
 }
 
-static dyn_array_t dyn_array_resize_if_needed(dyn_array_t array)
+dyn_array_t dyn_array_resize_to_fit(dyn_array_t array, size_t total_items)
 {
-    size_t length = DYN_ARRAY_LENGTH(array);
     size_t *capacity = DYN_ARRAY_GET_ATTRIBUTE(array, DYN_ARRAY_CAPACITY);
     
-    if (length > *capacity)
+    if (total_items > *capacity)
     {
-        *capacity = MAX(length, *capacity * 2);
+        *capacity = MAX(total_items, *capacity * 2);
         
         size_t *actual_array = (size_t*) array - DYN_ARRAY_HEADER_SIZE;
         actual_array = realloc(actual_array, DYN_ARRAY_HEADER_SIZE * sizeof(size_t) +
@@ -54,24 +53,10 @@ static dyn_array_t dyn_array_resize_if_needed(dyn_array_t array)
     return array;
 }
 
-dyn_array_t dyn_array_append_buffer(dyn_array_t array, void *buffer, int total_items)
-{
-    size_t old_length = DYN_ARRAY_LENGTH(array);
-    
-    *DYN_ARRAY_GET_ATTRIBUTE(array, DYN_ARRAY_LENGTH) += total_items;
-    array = dyn_array_resize_if_needed(array);
-    
-    size_t item_size = *DYN_ARRAY_GET_ATTRIBUTE(array, DYN_ARRAY_ITEM_SIZE);
-    memcpy(array + old_length * item_size, buffer, total_items * item_size);
-
-    // The pointer might have been moved to somewhere else in memory
-    return array;
-}
-
 dyn_array_t dyn_array_prepare_new_item(dyn_array_t array)
 {
     *DYN_ARRAY_GET_ATTRIBUTE(array, DYN_ARRAY_LENGTH) += 1;
-    return dyn_array_resize_if_needed(array);
+    return dyn_array_resize_to_fit(array, DYN_ARRAY_LENGTH(array));
 }
 
 void dyn_array_destroy(dyn_array_t array)

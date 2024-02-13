@@ -27,7 +27,8 @@
 
 enum
 {
-    COLOR_LINK = 1
+    COLOR_LINK = 1,
+    COLOR_LIST_ITEM
 };
 
 struct
@@ -71,6 +72,7 @@ static int get_element_type_attributes(gemtext_line_e type)
         return A_BOLD;
         
     case GEMTEXT_LINK: return A_ITALIC | COLOR_PAIR(COLOR_LINK);
+    case GEMTEXT_LIST_ITEM: return COLOR_PAIR(COLOR_LIST_ITEM);
     case GEMTEXT_BLOCKQUOTE: return A_DIM;
 
     default:
@@ -150,9 +152,10 @@ static void refresh_document_viewer(void)
             break;
 
         case GEMTEXT_LINK:
-            // If this is the last link on a chain, add some spacing at the bottom
+        case GEMTEXT_LIST_ITEM:
+            // If this is the last link or list item on a chain, add some spacing at the bottom
             if (i != DYN_ARRAY_LENGTH(document->elements) - 1 &&
-                line->type == GEMTEXT_LINK && document->elements[i + 1].type != GEMTEXT_LINK)
+                document->elements[i + 1].type != line->type)
             {
                 y_offset++;
             }
@@ -348,10 +351,13 @@ int main(int argc, char **argv)
     {
         init_color(COLOR_LINK, 350, 800, 1000);
         init_pair(COLOR_LINK, COLOR_LINK, COLOR_BLACK);
+        init_color(COLOR_LIST_ITEM, 800, 800, 400);
+        init_pair(COLOR_LIST_ITEM, COLOR_LIST_ITEM, COLOR_BLACK);
     }
     else
     {
         init_pair(COLOR_LINK, COLOR_BLUE, COLOR_BLACK);
+        init_pair(COLOR_LIST_ITEM, COLOR_GREEN, COLOR_BLACK);
     }
 
     keypad(stdscr, true);
@@ -394,7 +400,10 @@ int main(int argc, char **argv)
             break;
 
         case GO_BACK_KEY:
+            if (globals.browser.pages.length < 2) break;
+            
             gemini_browser_go_back(&globals.browser);
+            set_status("{browsing} %s", CURRENT_BROWSER_PAGE->document->url);
             refresh_document_viewer();
             break;
 

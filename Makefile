@@ -15,7 +15,7 @@ build: $(OBJECTS)
 	@echo "{Makefile} Creating the executable"
 	@$(CC) $(OBJECTS) -o astrology $(LD_FLAGS)
 
-	@./astrology gemini://geminiprotocol.net/
+	@./astrology gemini://gemini.circumlunar.space/users/emptyhallway/augr/line-mode-markers.gmi
 
 objects/%.o: %.c
 	@# Making sure that the directory already exists before creating the object
