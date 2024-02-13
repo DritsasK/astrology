@@ -20,16 +20,13 @@
 
 #include "gemini.h"
 #include "config.h"
+#include "doubly_linked.h"
 #include <stddef.h>
 #include <stdbool.h>
 #include <openssl/ssl.h>
 
-// A linked list of documents, along with some additional browser information
-typedef struct gemini_page_t
+typedef struct
 {
-    struct gemini_page_t *next;
-    struct gemini_page_t *previous;
-
     gemini_document_t *document;
     int scroll_offset;
 } gemini_page_t;
@@ -38,10 +35,8 @@ typedef struct
 {
     // The same context will be used throughout all gemini connections
     SSL_CTX *ssl_ctx;
-    
-    size_t total_pages;
-    gemini_page_t *page;
-    gemini_page_t *last_page;
+
+    doubly_linked_t pages;
 } gemini_browser_t;
 
 typedef enum
@@ -62,7 +57,7 @@ typedef struct
 } browser_link_t;
 
 // This function must be called before any document has been loaded
-void gemini_browser_create_tls_context(gemini_browser_t *browser);
+void gemini_browser_create(gemini_browser_t *browser);
 
 void gemini_browser_load_document(gemini_browser_t *browser, char *gemini_url);
 void gemini_browser_go_back(gemini_browser_t *browser);

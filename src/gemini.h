@@ -72,6 +72,6 @@ gemini_document_t* gemini_fetch_document(SSL_CTX *ctx, char *gemini_url);
 void gemini_document_collect_content(gemini_document_t *document, SSL *ssl);
 void gemini_document_parse_content(gemini_document_t *document);
 
-void gemini_destroy_document(gemini_document_t *document);
+void gemini_document_destroy(gemini_document_t *document);
 
 #endif

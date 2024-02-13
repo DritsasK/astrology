@@ -35,7 +35,16 @@ static char* gemini_error_mappings[TOTAL_GEMINI_STATUSES] = {
     [GEMINI_HEADER_PARSING_FAILURE] = "Failed to parse the server's response header. Is the server properly implemented?",
 };
 
-void gemini_browser_create_tls_context(gemini_browser_t *browser)
+// Will be passed as an item deallocator into the generic doubly linked list instance
+static void page_deallocator(void *data)
+{
+    gemini_page_t *page = (gemini_page_t*) data;
+
+    gemini_document_destroy(page->document);
+    free(page);
+}
+
+void gemini_browser_create(gemini_browser_t *browser)
 {
     // The SSL context will describe how future SSL connection will be created
     // The latest TLS method will be used
@@ -47,7 +56,8 @@ void gemini_browser_create_tls_context(gemini_browser_t *browser)
     if (!browser->ssl_ctx)
         exit_with_failure("failed to initialize TLS client context");
 
-    browser->page = NULL;
+    // Initializing the pages doubly linked list that will act as a history recorder
+    doubly_linked_create(&browser->pages, MAX_HISTORY_LENGTH, page_deallocator);
 }
 
 void gemini_browser_load_document(gemini_browser_t *browser, char *gemini_url)
@@ -55,7 +65,6 @@ void gemini_browser_load_document(gemini_browser_t *browser, char *gemini_url)
     gemini_page_t *page = malloc(sizeof(gemini_page_t));
 
     page->scroll_offset = 0;
-    page->previous = page->next = NULL;
     page->document = gemini_fetch_document(browser->ssl_ctx, gemini_url);
 
     /*
@@ -76,52 +85,13 @@ void gemini_browser_load_document(gemini_browser_t *browser, char *gemini_url)
         
         gemini_document_parse_content(page->document);
     }
-    
-    // Insert the document at the start of the history doubly linked list
-    if (browser->total_pages == 0)
-    {
-        browser->page = page;
-        browser->last_page = page;
-    }
-    else
-    {
-        // The new page should become the new root
-        page->previous = browser->page;
-        browser->page->next = page;
-        browser->page = page;
-    }
 
-    // If only one page was present before the addition, adjust the last_page
-    if (browser->total_pages == 1)
-    {
-        browser->last_page = page->previous;
-    }
-    // If we've reached the limit of the history, clear the last entry
-    else if (browser->total_pages == MAX_HISTORY_LENGTH - 1)
-    {
-        gemini_page_t *page_to_delete = browser->last_page;
-        browser->last_page = browser->last_page->next;
-
-        gemini_destroy_document(page_to_delete->document);
-        free(page_to_delete);
-        browser->total_pages--;
-    }
-    
-    browser->total_pages++;
+    doubly_linked_insert_first(&browser->pages, page);
 }
 
 void gemini_browser_go_back(gemini_browser_t *browser)
 {
-    // If there's not history, ignore the request
-    if (browser->total_pages < 2) return;
-
-    gemini_page_t *page_to_delete = browser->page;
-    browser->page = browser->page->previous;
-
-    gemini_destroy_document(page_to_delete->document);
-    free(page_to_delete);
-
-    browser->total_pages--;
+    doubly_linked_delete_head(&browser->pages);
 }
 
 void gemini_browser_get_link_under_cursor(gemini_browser_t *browser, browser_link_t *link)
@@ -132,9 +102,10 @@ void gemini_browser_get_link_under_cursor(gemini_browser_t *browser, browser_lin
         [LINK_SCHEME_HTTP] = "http://",
         [LINK_SCHEME_HTTPS] = "https://"
     };
-    
-    gemtext_line_t *element = &browser->page->document->elements[browser->page->scroll_offset];
-    char *content = browser->page->document->content;
+
+    gemini_page_t *page = browser->pages.head->data;
+    char *content = page->document->content;
+    gemtext_line_t *element = &page->document->elements[page->scroll_offset];
     link->scheme = LINK_SCHEME_INVALID;
     
     // If the elements is not a link, ingore the request
@@ -151,7 +122,7 @@ void gemini_browser_get_link_under_cursor(gemini_browser_t *browser, browser_lin
     // If the link is relative to the hostname, append it to the active URL
     if (content[start] == '/')
     {
-        char *hostname = get_hostname_with_scheme(browser->page->document->url);
+        char *hostname = get_hostname_with_scheme(page->document->url);
         link->scheme = LINK_SCHEME_GEMINI;
         link->content = join_strings_together(
             hostname, strlen(hostname),
@@ -195,7 +166,7 @@ void gemini_browser_get_link_under_cursor(gemini_browser_t *browser, browser_lin
     // it must be pointing to another location at the current directory
     else
     {
-        char *browser_url = browser->page->document->url;
+        char *browser_url = page->document->url;
         size_t browser_url_len = strlen(browser_url);
             
         for (int i = browser_url_len; i > 0; i--)

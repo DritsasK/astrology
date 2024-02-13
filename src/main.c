@@ -35,11 +35,16 @@ struct
     // This structure will manage all gemtext documents
     // This file will only be dedicated to rendering that data onto the screen
     gemini_browser_t browser;
-    
+
     WINDOW *status_bar;
+    char input_buffer[1024];
+    size_t input_length;
+    
     WINDOW *document_viewer;
     int total_elements_on_view;
 } globals;
+
+#define CURRENT_BROWSER_PAGE ((gemini_page_t*) globals.browser.pages.head->data)
 
 static void set_status(const char *format, ...)
 {
@@ -115,10 +120,11 @@ static void refresh_document_viewer(void)
     globals.total_elements_on_view = 0;
     
     // Get whatever ends first, either the screen's limit or the remaining elements
-    gemini_document_t *document = globals.browser.page->document;
+    gemini_page_t *page = CURRENT_BROWSER_PAGE;
+    gemini_document_t *document = page->document;
     size_t y_offset = 0;
     
-    for (size_t i = globals.browser.page->scroll_offset; i < DYN_ARRAY_LENGTH(document->elements); i++)
+    for (size_t i = page->scroll_offset; i < DYN_ARRAY_LENGTH(document->elements); i++)
     {
         // Check if we've reached the bottom of the screen
         if (y_offset >= getmaxy(globals.document_viewer) - 1)
@@ -168,7 +174,7 @@ static void navigate_to_url(char *gemini_url)
     // Navigating to the specified starter page
     gemini_browser_load_document(&globals.browser, gemini_url);
 
-    set_status("{browsing} %s", globals.browser.page->document->url);
+    set_status("{browsing} %s", CURRENT_BROWSER_PAGE->document->url);
     refresh_document_viewer();
 }
 
@@ -234,18 +240,85 @@ static void handle_window_resize(void)
     // Otherwise, the window disappears when scaling it down
     refresh();
 
-    set_status("{browsing} %s", globals.browser.page->document->url);
+    set_status("{browsing} %s", CURRENT_BROWSER_PAGE->document->url);
     refresh_document_viewer();
 }
 
 static void scroll_to(int new_offset)
 {
+    gemini_page_t *page = CURRENT_BROWSER_PAGE;
+    
     // Only scroll if something has changed and we are still inside the valid bounds
-    if (new_offset == globals.browser.page->scroll_offset) return;
-    if (new_offset < 0 || new_offset > DYN_ARRAY_LENGTH(globals.browser.page->document->elements) - 1) return;
+    if (new_offset == page->scroll_offset) return;
+    if (new_offset < 0 || new_offset > DYN_ARRAY_LENGTH(page->document->elements) - 1) return;
 
-    globals.browser.page->scroll_offset = new_offset;
+    page->scroll_offset = new_offset;
     refresh_document_viewer();
+}
+
+// Use the status bar as an input mechanism
+static void collect_user_input(char *prompt)
+{
+    globals.input_length = 0;
+    curs_set(1);
+    
+    // Print out the prompt to help the user out
+    wclear(globals.status_bar);
+    wprintw(globals.status_bar, "{%s}: ", prompt);
+    wrefresh(globals.status_bar);
+    
+    int c;
+    size_t offset = strlen(prompt) + 4;
+    int width = getmaxx(globals.status_bar);
+
+    wmove(globals.status_bar, 0, offset);
+
+    while ((c = getch()) != '\n' || c == EXIT_KEY)
+    {
+        if (isprint(c) && offset < width)
+        {
+            globals.input_buffer[globals.input_length] = c;
+            globals.input_length++;
+            waddch(globals.status_bar, c);
+            offset++;
+        }
+        // If the backspace was pressed, move back and delete the last character
+        else if (c == KEY_BACKSPACE && globals.input_length > 0)
+        {
+            offset--;
+            globals.input_length--;
+            mvwdelch(globals.status_bar, 0, offset);
+        }
+
+        // Move the cursor to the correct position
+        wmove(globals.status_bar, 0, offset);
+        wrefresh(globals.status_bar);
+    }
+
+    // Make sure to hide the cursor and terminate the buffer with a NULL byte
+    curs_set(0);
+    globals.input_buffer[globals.input_length] = 0;
+}
+
+static void visit_page_of_prompt(void)
+{
+    collect_user_input("insert gemini url");
+
+    // Check if the user inserted a gemini scheme
+    if (!strncmp(globals.input_buffer, "gemini://", 9))
+    {
+        navigate_to_url(globals.input_buffer);
+    }
+    else
+    {
+        // Otherwise, stick the gemini scheme into the URL manually
+        char *new_url = join_strings_together(
+            "gemini://", 9,
+            globals.input_buffer, globals.input_length);
+
+        navigate_to_url(new_url);
+        free(new_url);
+    }
 }
 
 int main(int argc, char **argv)
@@ -257,7 +330,7 @@ int main(int argc, char **argv)
     if (strncmp(argv[1], "gemini://", 9))
         exit_with_failure("please provide a valid gemini:// url");
 
-    gemini_browser_create_tls_context(&globals.browser);
+    gemini_browser_create(&globals.browser);
 
     /*
      * The program's structure is flexible enough, so a variety of distinct frontends can be built without much hussle
@@ -280,7 +353,9 @@ int main(int argc, char **argv)
     {
         init_pair(COLOR_LINK, COLOR_BLUE, COLOR_BLACK);
     }
-    
+
+    keypad(stdscr, true);
+    cbreak();
     curs_set(0);
     noecho();
 
@@ -300,7 +375,7 @@ int main(int argc, char **argv)
     int c;
     while ((c = getch()) != EXIT_KEY)
     {
-        gemini_page_t *page = globals.browser.page;
+        gemini_page_t *page = CURRENT_BROWSER_PAGE;
         
         switch (c)
         {
@@ -323,6 +398,10 @@ int main(int argc, char **argv)
             refresh_document_viewer();
             break;
 
+        case VISIT_PAGE_KEY:
+            visit_page_of_prompt();
+            break;
+            
         case KEY_RESIZE:
             // Move and scale the UI accordingly to fit in with the new terminal dimensions
             handle_window_resize();

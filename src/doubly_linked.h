@@ -15,23 +15,34 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef _CONFIG_H
-#define _CONFIG_H
+#ifndef _DOUBLY_LINKED_H
+#define _DOUBLY_LINKED_H
 
-// Some frontend configuration
-#define EXIT_KEY 'q'
-#define MOVE_DOWN_KEY 'j'
-#define MOVE_UP_KEY 'k'
-#define FOLLOW_LINK_KEY '\n'
-#define GO_BACK_KEY 'u'
-#define PAGE_DOWN_KEY '['
-#define VISIT_PAGE_KEY 'v'
-#define GO_TO_START_KEY 'g'
-#define GO_TO_BOTTOM_KEY 'G'
+#include <stddef.h>
 
-#define MAX_HISTORY_LENGTH 10
-#define VIEWER_WIDTH 90
-// Please make sure to insert a space right after the program
-#define WEB_BROWSER_COMMAND "firefox "
+typedef struct doubly_node_t
+{
+    struct doubly_node_t *next;
+    struct doubly_node_t *previous;
+
+    void *data;
+} doubly_node_t;
+
+typedef void (*item_deallocator_t) (void *item);
+
+typedef struct
+{
+    doubly_node_t *head;
+    // Keeping track of the last item to make deletion faster
+    doubly_node_t *tail;
+
+    item_deallocator_t deallocator;
+    size_t max_length;
+    size_t length;
+} doubly_linked_t;
+
+void doubly_linked_create(doubly_linked_t *list, size_t max_length, item_deallocator_t deallocator);
+void doubly_linked_insert_first(doubly_linked_t *list, void *data);
+void doubly_linked_delete_head(doubly_linked_t *list);
 
 #endif

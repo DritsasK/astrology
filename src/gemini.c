@@ -251,7 +251,7 @@ fetch_failed:
     return document;
 }
 
-void gemini_destroy_document(gemini_document_t *document)
+void gemini_document_destroy(gemini_document_t *document)
 {
     free(document->url);
     dyn_array_destroy(document->content);
