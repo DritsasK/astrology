@@ -41,7 +41,6 @@ dyn_array_t dyn_array_resize_to_fit(dyn_array_t array, size_t total_items)
     if (total_items > *capacity)
     {
         *capacity = MAX(total_items, *capacity * 2);
-        fprintf(stderr, "reallocating to %zu\n", *capacity);
         
         size_t *actual_array = (size_t*) array - DYN_ARRAY_HEADER_SIZE;
         actual_array = realloc(actual_array, DYN_ARRAY_HEADER_SIZE * sizeof(size_t) +

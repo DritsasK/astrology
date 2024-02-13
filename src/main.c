@@ -264,63 +264,64 @@ static void scroll_to(int new_offset)
 static size_t collect_user_input(char *buffer, char *prompt, size_t max_length)
 {
     size_t input_length = 0;
-    curs_set(1);
     
     // Print out the prompt to help the user out
     wclear(globals.status_bar);
     wprintw(globals.status_bar, "{%s}: ", prompt);
     wrefresh(globals.status_bar);
     
+    size_t offset_x = strlen(prompt) + 4;
+    size_t scroll_x = 0;
+    size_t max_visible_length = getmaxx(globals.status_bar) - offset_x;
+
     int c;
-    size_t offset = strlen(prompt) + 4;
-    int width = getmaxx(globals.status_bar);
-
-    wmove(globals.status_bar, 0, offset);
-
-    while ((c = getch()) != '\n' || c == EXIT_KEY)
+    while ((c = getch()) != '\n')
     {
-        if (isprint(c) && offset < width)
+        if (isprint(c))
         {
+            if (input_length >= max_length) continue;
+            
             // Spaces should be encoded
             if (c == ' ')
             {
-                if (input_length + 3 < max_length - 1)
+                if (input_length + 3 < max_length)
                 {
-                    strncpy(buffer + offset, "%20", 3);
-                    mvwaddstr(globals.status_bar, 0, offset, "%20");
+                    strncpy(buffer + input_length, "%20", 3);
                     input_length += 3;
-                    offset += 3;
                 }
             }
             else
             {
                 buffer[input_length] = c;
                 input_length++;
-                waddch(globals.status_bar, c);
-                offset++;
             }
         }
         // If the backspace was pressed, move back and delete the last character
         else if (c == KEY_BACKSPACE && input_length > 0)
         {
-            offset--;
+            mvwdelch(globals.status_bar, 0, offset_x + MIN(input_length - 1, max_visible_length));
             input_length--;
-            mvwdelch(globals.status_bar, 0, offset);
         }
 
-        // Move the cursor to the correct position
-        wmove(globals.status_bar, 0, offset);
+        // If we've went past the limit, scroll horizontally
+        if (input_length >= max_visible_length)
+        {
+            scroll_x = input_length - max_visible_length;
+        }
+
+        // Reprint the portion of the string that is visible
+        mvwprintw(globals.status_bar, 0, offset_x, "%.*s",
+                  MIN(max_visible_length, input_length), buffer + scroll_x);
+        
         wrefresh(globals.status_bar);
     }
 
-    // Hide the cursor again
-    curs_set(0);
     return input_length;
 }
 
 static void visit_page_of_prompt(void)
 {
-    globals.input_length = collect_user_input(globals.input_buffer, "insert gemini url", 1022);
+    globals.input_length = collect_user_input(globals.input_buffer, "insert gemini url", 900);
     globals.input_buffer[globals.input_length] = 0;
     
     // Check if the user inserted a gemini scheme
@@ -415,7 +416,7 @@ int main(int argc, char **argv)
             follow_link();
             break;
 
-        case SEARCH_KEY:
+        case SEARCH_ENGINE_KEY:
             navigate_to_url("gemini://geminispace.info/search");
             break;
             

@@ -15,7 +15,7 @@ build: $(OBJECTS)
 	@echo "{Makefile} Creating the executable"
 	@$(CC) $(OBJECTS) -o astrology $(LD_FLAGS)
 
-	@./astrology gemini://mozz.us/jetforce/tests/test_jetforce.py
+	@./astrology gemini://geminiprotocol.net
 
 objects/%.o: %.c
 	@# Making sure that the directory already exists before creating the object
