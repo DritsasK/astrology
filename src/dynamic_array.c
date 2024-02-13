@@ -33,7 +33,7 @@ dyn_array_t dyn_array_create(size_t initial_capacity, size_t item_size)
     // The API will be almost identical to that of an ordinary array
     return array + DYN_ARRAY_HEADER_SIZE;
 }
-
+#include <stdio.h>
 dyn_array_t dyn_array_resize_to_fit(dyn_array_t array, size_t total_items)
 {
     size_t *capacity = DYN_ARRAY_GET_ATTRIBUTE(array, DYN_ARRAY_CAPACITY);
@@ -41,11 +41,12 @@ dyn_array_t dyn_array_resize_to_fit(dyn_array_t array, size_t total_items)
     if (total_items > *capacity)
     {
         *capacity = MAX(total_items, *capacity * 2);
+        fprintf(stderr, "reallocating to %zu\n", *capacity);
         
         size_t *actual_array = (size_t*) array - DYN_ARRAY_HEADER_SIZE;
         actual_array = realloc(actual_array, DYN_ARRAY_HEADER_SIZE * sizeof(size_t) +
                                *capacity * *DYN_ARRAY_GET_ATTRIBUTE(array, DYN_ARRAY_ITEM_SIZE));
-
+        
         // Point back to the start of the actual data
         return actual_array + DYN_ARRAY_HEADER_SIZE;
     }

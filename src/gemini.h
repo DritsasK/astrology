@@ -44,7 +44,7 @@ typedef enum
     GEMINI_SERVER_CONNECTION_FAILURE,
     
     GEMINI_TLS_HANDSHAKE_FAILURE,
-    GEMINI_NOT_GEMTEXT,
+    GEMINI_NOT_TEXT,
     GEMINI_HEADER_PARSING_FAILURE,
     // Is this even a word?
     TOTAL_GEMINI_STATUSES
@@ -67,10 +67,11 @@ typedef struct
     gemini_status_e status;
 } gemini_document_t;
 
+typedef size_t (*gemini_input_callback_t) (char *buffer, char *prompt, size_t max_length);
+
 // Initializes and populates a gemini documents by accessing the provided server using the Gemini protocol
-gemini_document_t* gemini_fetch_document(SSL_CTX *ctx, char *gemini_url);
-void gemini_document_collect_content(gemini_document_t *document, SSL *ssl);
-void gemini_document_parse_content(gemini_document_t *document);
+gemini_document_t* gemini_fetch_document(SSL_CTX *ctx, char *gemini_url, gemini_input_callback_t input_callback);
+void gemini_document_parse_gemtext(gemini_document_t *document);
 
 void gemini_document_destroy(gemini_document_t *document);
 

@@ -31,7 +31,7 @@ static char* gemini_error_mappings[TOTAL_GEMINI_STATUSES] = {
     [GEMINI_PERMANENT_FAILURE] = "The server encountered a permanent failure.",
     [GEMINI_CLIENT_CERTIFICATE_REQUIRED] = "The server requires a client certificate, which is not implemented yet.",
     [GEMINI_TLS_HANDSHAKE_FAILURE] = "The TLS handshake failed, is the server down?",
-    [GEMINI_NOT_GEMTEXT] = "The server returned something that is not Gemtext, cannot render!",
+    [GEMINI_NOT_TEXT] = "The server returned something that is neither gemtext nor raw text, cannot render!",
     [GEMINI_HEADER_PARSING_FAILURE] = "Failed to parse the server's response header. Is the server properly implemented?",
 };
 
@@ -44,7 +44,7 @@ static void page_deallocator(void *data)
     free(page);
 }
 
-void gemini_browser_create(gemini_browser_t *browser)
+void gemini_browser_create(gemini_browser_t *browser, gemini_input_callback_t input_callback)
 {
     // The SSL context will describe how future SSL connection will be created
     // The latest TLS method will be used
@@ -58,6 +58,8 @@ void gemini_browser_create(gemini_browser_t *browser)
 
     // Initializing the pages doubly linked list that will act as a history recorder
     doubly_linked_create(&browser->pages, MAX_HISTORY_LENGTH, page_deallocator);
+
+    browser->input_callback = input_callback;
 }
 
 void gemini_browser_load_document(gemini_browser_t *browser, char *gemini_url)
@@ -65,7 +67,7 @@ void gemini_browser_load_document(gemini_browser_t *browser, char *gemini_url)
     gemini_page_t *page = malloc(sizeof(gemini_page_t));
 
     page->scroll_offset = 0;
-    page->document = gemini_fetch_document(browser->ssl_ctx, gemini_url);
+    page->document = gemini_fetch_document(browser->ssl_ctx, gemini_url, browser->input_callback);
 
     /*
      * Check if any errors where encountered
@@ -83,7 +85,7 @@ void gemini_browser_load_document(gemini_browser_t *browser, char *gemini_url)
         page->document->content[error_buffer_length] = 0;
         *DYN_ARRAY_GET_ATTRIBUTE(page->document->content, DYN_ARRAY_LENGTH) = error_buffer_length;
         
-        gemini_document_parse_content(page->document);
+        gemini_document_parse_gemtext(page->document);
     }
 
     doubly_linked_insert_first(&browser->pages, page);

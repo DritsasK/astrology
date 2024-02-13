@@ -27,13 +27,9 @@
 // Returns the file descriptor of the connection's socket
 static int create_ordinary_tcp_connection(const char *hostname, gemini_status_e *status)
 {
-    // Creating a TCP connection
-    int connection = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (socket < 0)
-        exit_with_failure("failed to initialize TCP socket");
-
     struct addrinfo dns_hints = {
-        .ai_family = AF_INET,
+        // Use IPv4 or IPv4, whatever is available
+        .ai_family = AF_UNSPEC,
         .ai_socktype = SOCK_STREAM
     };
     
@@ -47,9 +43,10 @@ static int create_ordinary_tcp_connection(const char *hostname, gemini_status_e 
         return -1;
     }
 
-    // I'm only going to be dealing with IPv4 addresses as of now
-    if (server_info->ai_family != AF_INET)
-        exit_with_failure("please provide an IPv4 server");
+    // Creating a TCP connection
+    int connection = socket(server_info->ai_family, SOCK_STREAM, IPPROTO_TCP);
+    if (socket < 0)
+        exit_with_failure("failed to initialize TCP socket");
 
     // Attempt to connect and clear up all memory
     if (connect(connection, (struct sockaddr*) server_info->ai_addr, server_info->ai_addrlen) != 0)
@@ -61,6 +58,73 @@ static int create_ordinary_tcp_connection(const char *hostname, gemini_status_e 
     *status = GEMINI_OK;
     freeaddrinfo(server_info);
     return connection;
+}
+
+static void gemini_document_collect_content(gemini_document_t *document, SSL *ssl)
+{
+    size_t chunk_size = 1024;
+    
+    // First, just read of all the content into a dynamic array
+    // It will make parsing considerably easier
+    document->content = dyn_array_create(chunk_size, sizeof(char));
+    
+    for (;;)
+    {
+        size_t length = DYN_ARRAY_LENGTH(document->content);
+        size_t remaining_space = *DYN_ARRAY_GET_ATTRIBUTE(document->content, DYN_ARRAY_CAPACITY) - length;
+
+        if (remaining_space < chunk_size)
+        {
+            // This is really similar to how Golang works
+            document->content = dyn_array_resize_to_fit(document->content, length + chunk_size);
+        }
+
+        // This is more complicated but certainly faster that creating an intermediate buffer
+        int bytes_read = SSL_read(ssl, document->content + length, chunk_size);
+        if (bytes_read <= 0)
+            break;
+ 
+        *DYN_ARRAY_GET_ATTRIBUTE(document->content, DYN_ARRAY_LENGTH) += bytes_read;
+    }
+
+    document->content[DYN_ARRAY_LENGTH(document->content)] = 0;
+}
+
+/*
+ * Raw text content will be parsed into a fake list of preformatted gemtext elements
+ * The frontend will be simplified too, because it won't need to distinguish them apart!
+ */
+static void gemini_document_parse_text(gemini_document_t *document)
+{
+    // Count the total line breaks, much faster than resizing the dynamic array
+    size_t total_lines = 0;
+
+    for (int i = 0; i < DYN_ARRAY_LENGTH(document->content); i++)
+        if (document->content[i] == '\n')
+            total_lines++;
+
+    document->elements = dyn_array_create(total_lines, sizeof(gemtext_line_t));
+    size_t offset = 0;
+    
+    for (size_t i = 0; i < total_lines; i++)
+    {
+        document->elements = dyn_array_prepare_new_item(document->elements);
+        gemtext_line_t *new_item = &DYN_ARRAY_GET_LAST(document->elements);
+
+        new_item->start = offset;
+        new_item->type = GEMTEXT_PREFORMATTED;
+
+        if (i != total_lines - 1)
+        {
+            // Find the next new line position and perform a simple subtraction to find the substring's end
+            char *next_new_line = strchr(document->content + offset, '\n');
+
+            new_item->end = (next_new_line - document->content);
+            offset = new_item->end + 1;
+        }
+        else
+            new_item->end = DYN_ARRAY_LENGTH(document->content);
+    }
 }
 
 /*
@@ -89,7 +153,7 @@ static gemtext_line_e get_gemtext_type_from_line(char *line)
     return GEMTEXT_PARAGRAPH;
 }
 
-void gemini_document_parse_content(gemini_document_t *document)
+void gemini_document_parse_gemtext(gemini_document_t *document)
 {
     // Parsing each line of the output into an array of gemtext elements
     document->elements = dyn_array_create(20, sizeof(gemtext_line_t));
@@ -139,87 +203,66 @@ void gemini_document_parse_content(gemini_document_t *document)
     }
 }
 
-void gemini_document_collect_content(gemini_document_t *document, SSL *ssl)
+gemini_document_t* gemini_fetch_document(SSL_CTX *ctx, char *gemini_url, gemini_input_callback_t input_callback)
 {
-    size_t chunk_size = 1024;
-    
-    // First, just read of all the content into a dynamic array
-    // It will make parsing considerably easier
-    document->content = dyn_array_create(chunk_size, sizeof(char));
-    
-    for (;;)
-    {
-        size_t length = DYN_ARRAY_LENGTH(document->content);
-        size_t remaining_space = *DYN_ARRAY_GET_ATTRIBUTE(document->content, DYN_ARRAY_CAPACITY) - length;
-
-        if (remaining_space < chunk_size)
-        {
-            // This is really similar to how Golang works
-            document->content = dyn_array_resize_to_fit(document->content, length + chunk_size);
-        }
-
-        // This is more complicated but certainly faster that creating an intermediate buffer
-        int bytes_read = SSL_read(ssl, document->content + length, chunk_size);
-        if (bytes_read <= 0)
-            break;
-
-        *DYN_ARRAY_GET_ATTRIBUTE(document->content, DYN_ARRAY_LENGTH) += bytes_read;
-    }
-}
-
-gemini_document_t* gemini_fetch_document(SSL_CTX *ctx, char *gemini_url)
-{
-    gemini_document_t *document = malloc(sizeof(gemini_document_t));
-    document->url = strdup(gemini_url);
+    // Create a new TLS connection using the provided context
+    SSL *ssl = SSL_new(ctx);
+    gemini_status_e error_status;
 
     char *hostname = get_hostname_with_scheme(gemini_url);
-    int connection = create_ordinary_tcp_connection(hostname + 9, &document->status);
+    int connection = create_ordinary_tcp_connection(hostname + 9, &error_status);
     free(hostname);
 
     // Quit early if an error was encountered during the simple socket connection
-    if (document->status != GEMINI_OK)
-        return document;
-        
-    // Create a new TLS connection using the provided context
-    SSL *ssl = SSL_new(ctx);
+    if (error_status != GEMINI_OK)
+        goto fetch_failed;
+
     SSL_set_fd(ssl, connection);
 
     if (SSL_connect(ssl) != 1)
     {
-        document->status = GEMINI_TLS_HANDSHAKE_FAILURE;
+        error_status = GEMINI_TLS_HANDSHAKE_FAILURE;
         goto fetch_failed;
     }
 
+    // 1029 is the maximum size of the server response header (plus a NULL byte)
+    // This buffer will be used for both auxiliary input and output storage
+    char io_buffer[1030];
+    
     // The client needs to request a gemini page from the server.
     // The limit is extracted from the specification. A scheme should also be included.
-    // The requset shall be terminated with a (Carriage Return + New Line Feed) sequence
-    char io_buffer[1024 + 3];
+    // The request shall be terminated with a (Carriage Return + New Line Feed) sequence
     sprintf(io_buffer, "%s\r\n", gemini_url);
-    SSL_write(ssl, io_buffer, strlen(io_buffer));
-
+    size_t url_len = strlen(gemini_url);
+    SSL_write(ssl, io_buffer, url_len + 2);
+    
     // Read and parse the server's response header
+    // Gemini server headers are of the form: <2 bytes: STATUS><SPACE><1024 bytes: META>\r\n
     size_t header_length = 0;
-
-    do
+    for (;;)
     {
-        // Continue reading until a new line character has been received
-        int bytes_read = SSL_read(ssl, io_buffer + header_length, sizeof(io_buffer));
-        if (bytes_read <= 0)
+        int bytes_read = SSL_read(ssl, io_buffer + header_length, 1);
+        if (!bytes_read)
             break;
         
-        header_length += bytes_read;
-        
-    } while (io_buffer[header_length - 1] != '\n');
+        header_length++;
 
+        // Check if we've reached the end of the buffer
+        // I'm doing this one character at a time so I don't skip some content by accident
+        if (header_length >= 2 && io_buffer[header_length - 2] == '\r' && io_buffer[header_length - 1] == '\n')
+        {
+            io_buffer[header_length] = 0;
+            break;
+        }
+    }
+    
     // If not even a status was received, something went wrong
     if (header_length < 4)
     {
-        document->status = GEMINI_HEADER_PARSING_FAILURE;
+        error_status = GEMINI_HEADER_PARSING_FAILURE;
         goto fetch_failed;
     }
 
-    // Insert a NULL byte and parse into separate strings
-    io_buffer[header_length] = 0;
     char status[2];
     char meta[1024];
     sscanf(io_buffer, "%2s %s\r\n", status, meta);
@@ -227,9 +270,23 @@ gemini_document_t* gemini_fetch_document(SSL_CTX *ctx, char *gemini_url)
     switch (status[0])
     {
     case '1':
-        // The server is asking for input
-        exit_with_failure("asking for input: %s", meta);
-        return NULL;
+        // The result query (e.g. ?search%20query) will be glued to the initial URL
+        strncpy(io_buffer, gemini_url, url_len);
+        size_t offset = url_len;
+        io_buffer[offset++] = '?';
+        
+        // Out of the 1024 total bytes, 2 will be occupied by \r\n
+        offset += input_callback(io_buffer + offset, meta, 1021 - offset);
+        io_buffer[offset] = 0;
+
+        // A new connection is presumably required
+        // I tried using the already existing one but the server would not accept my input,
+        // nor would it send any data back
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        close(connection);
+
+        return gemini_fetch_document(ctx, io_buffer, input_callback);
         
     case '3':
         // If the server has requested a redirection, recursively call this function
@@ -238,40 +295,54 @@ gemini_document_t* gemini_fetch_document(SSL_CTX *ctx, char *gemini_url)
         close(connection);
 
         // Do something in the case that the resource is not a gemini URL
-        return gemini_fetch_document(ctx, meta);
+        return gemini_fetch_document(ctx, meta, input_callback);
 
     case '4':
         // Identical requests may succeed in the future, so the user can retry
-        document->status = GEMINI_TEMPORARY_FAILURE;
+        error_status = GEMINI_TEMPORARY_FAILURE;
         goto fetch_failed;
 
     case '5':
         // Something is seriously wrong with the server
-        document->status = GEMINI_PERMANENT_FAILURE;
+        error_status = GEMINI_PERMANENT_FAILURE;
         goto fetch_failed;
 
     case '6':
         // As of now, I'm considering this an error
         // The program cannot currently handle client certificates
-        document->status = GEMINI_CLIENT_CERTIFICATE_REQUIRED;
+        error_status = GEMINI_CLIENT_CERTIFICATE_REQUIRED;
         goto fetch_failed;
     }
 
+fetch_failed:
+    gemini_document_t *document = malloc(sizeof(gemini_document_t));
+    document->status = error_status;
+    document->url = strdup(gemini_url);
+    
     // If the status starts with a two, fetch the content
-    // If <META> is an empty string, text/gemini is assumed
-    if (header_length < 6 || !strncmp(meta, "text/gemini", 9))
+    if (status[0] == '2' && document->status == GEMINI_OK)
     {
-        gemini_document_collect_content(document, ssl);
-        gemini_document_parse_content(document);
-        document->status = GEMINI_OK;
-    }
-    else
-    {
-        document->status = GEMINI_NOT_GEMTEXT;
-        goto fetch_failed;
+        // If the result is text, collect its content
+        // If <META> is an empty string, text/gemini is assumed
+        bool is_gemini = (header_length < 6 || !strncmp(meta, "text/gemini", 9));
+        bool is_text = !strncmp(meta, "text", 4);
+
+        if (is_text)
+        {
+            gemini_document_collect_content(document, ssl);
+
+            if (is_gemini)
+                gemini_document_parse_gemtext(document);
+            else
+                // If it's text but not gemtext, just handle it like a large preformatted block!
+                gemini_document_parse_text(document);
+        }
+        else
+        {
+            document->status = GEMINI_NOT_TEXT;
+        }
     }
         
-fetch_failed:
     SSL_shutdown(ssl);
     SSL_free(ssl);
     close(connection);

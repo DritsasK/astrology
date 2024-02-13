@@ -28,6 +28,7 @@
 #define VISIT_PAGE_KEY 'v'
 #define GO_TO_START_KEY 'g'
 #define GO_TO_BOTTOM_KEY 'G'
+#define SEARCH_KEY 's'
 
 #define MAX_HISTORY_LENGTH 10
 #define VIEWER_WIDTH 90

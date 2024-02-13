@@ -259,10 +259,11 @@ static void scroll_to(int new_offset)
     refresh_document_viewer();
 }
 
-// Use the status bar as an input mechanism
-static void collect_user_input(char *prompt)
+// Reads user input from the status bar
+// Will save string into the buffer and return the total amount of bytes written
+static size_t collect_user_input(char *buffer, char *prompt, size_t max_length)
 {
-    globals.input_length = 0;
+    size_t input_length = 0;
     curs_set(1);
     
     // Print out the prompt to help the user out
@@ -280,16 +281,30 @@ static void collect_user_input(char *prompt)
     {
         if (isprint(c) && offset < width)
         {
-            globals.input_buffer[globals.input_length] = c;
-            globals.input_length++;
-            waddch(globals.status_bar, c);
-            offset++;
+            // Spaces should be encoded
+            if (c == ' ')
+            {
+                if (input_length + 3 < max_length - 1)
+                {
+                    strncpy(buffer + offset, "%20", 3);
+                    mvwaddstr(globals.status_bar, 0, offset, "%20");
+                    input_length += 3;
+                    offset += 3;
+                }
+            }
+            else
+            {
+                buffer[input_length] = c;
+                input_length++;
+                waddch(globals.status_bar, c);
+                offset++;
+            }
         }
         // If the backspace was pressed, move back and delete the last character
-        else if (c == KEY_BACKSPACE && globals.input_length > 0)
+        else if (c == KEY_BACKSPACE && input_length > 0)
         {
             offset--;
-            globals.input_length--;
+            input_length--;
             mvwdelch(globals.status_bar, 0, offset);
         }
 
@@ -298,15 +313,16 @@ static void collect_user_input(char *prompt)
         wrefresh(globals.status_bar);
     }
 
-    // Make sure to hide the cursor and terminate the buffer with a NULL byte
+    // Hide the cursor again
     curs_set(0);
-    globals.input_buffer[globals.input_length] = 0;
+    return input_length;
 }
 
 static void visit_page_of_prompt(void)
 {
-    collect_user_input("insert gemini url");
-
+    globals.input_length = collect_user_input(globals.input_buffer, "insert gemini url", 1022);
+    globals.input_buffer[globals.input_length] = 0;
+    
     // Check if the user inserted a gemini scheme
     if (!strncmp(globals.input_buffer, "gemini://", 9))
     {
@@ -333,7 +349,7 @@ int main(int argc, char **argv)
     if (strncmp(argv[1], "gemini://", 9))
         exit_with_failure("please provide a valid gemini:// url");
 
-    gemini_browser_create(&globals.browser);
+    gemini_browser_create(&globals.browser, collect_user_input);
 
     /*
      * The program's structure is flexible enough, so a variety of distinct frontends can be built without much hussle
@@ -399,6 +415,10 @@ int main(int argc, char **argv)
             follow_link();
             break;
 
+        case SEARCH_KEY:
+            navigate_to_url("gemini://geminispace.info/search");
+            break;
+            
         case GO_BACK_KEY:
             if (globals.browser.pages.length < 2) break;
             

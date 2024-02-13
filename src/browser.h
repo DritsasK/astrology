@@ -31,14 +31,6 @@ typedef struct
     int scroll_offset;
 } gemini_page_t;
 
-typedef struct
-{
-    // The same context will be used throughout all gemini connections
-    SSL_CTX *ssl_ctx;
-
-    doubly_linked_t pages;
-} gemini_browser_t;
-
 typedef enum
 {
     LINK_SCHEME_GEMINI,
@@ -56,8 +48,17 @@ typedef struct
     link_scheme_e scheme;
 } browser_link_t;
 
+typedef struct
+{
+    // The same context will be used throughout all gemini connections
+    SSL_CTX *ssl_ctx;
+
+    doubly_linked_t pages;
+    gemini_input_callback_t input_callback;
+} gemini_browser_t;
+
 // This function must be called before any document has been loaded
-void gemini_browser_create(gemini_browser_t *browser);
+void gemini_browser_create(gemini_browser_t *browser, gemini_input_callback_t input_callback);
 
 void gemini_browser_load_document(gemini_browser_t *browser, char *gemini_url);
 void gemini_browser_go_back(gemini_browser_t *browser);
