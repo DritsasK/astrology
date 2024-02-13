@@ -33,7 +33,7 @@ dyn_array_t dyn_array_create(size_t initial_capacity, size_t item_size)
     // The API will be almost identical to that of an ordinary array
     return array + DYN_ARRAY_HEADER_SIZE;
 }
-#include <stdio.h>
+
 dyn_array_t dyn_array_resize_to_fit(dyn_array_t array, size_t total_items)
 {
     size_t *capacity = DYN_ARRAY_GET_ATTRIBUTE(array, DYN_ARRAY_CAPACITY);

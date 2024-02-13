@@ -341,6 +341,15 @@ static void visit_page_of_prompt(void)
     }
 }
 
+// Just a thin wrapper around the user input handler so that there is some extra feedback to the user
+size_t on_server_input(char *buffer, char *prompt, size_t max_length)
+{
+    size_t bytes_written = collect_user_input(buffer, prompt, max_length);
+    set_status("{loading} the server is handling the input");
+
+    return bytes_written;
+}
+
 int main(int argc, char **argv)
 {
     // Validating user input
@@ -350,7 +359,7 @@ int main(int argc, char **argv)
     if (strncmp(argv[1], "gemini://", 9))
         exit_with_failure("please provide a valid gemini:// url");
 
-    gemini_browser_create(&globals.browser, collect_user_input);
+    gemini_browser_create(&globals.browser, on_server_input);
 
     /*
      * The program's structure is flexible enough, so a variety of distinct frontends can be built without much hussle
