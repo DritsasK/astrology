@@ -383,10 +383,7 @@ size_t on_server_input(char *buffer, char *prompt, size_t max_length)
 int main(int argc, char **argv)
 {
     // Validating user input
-    if (argc != 2)
-        exit_with_failure("please provide a gemini URL");
-
-    if (strncmp(argv[1], "gemini://", 9) || strlen(argv[1]) > 1022)
+    if (argc == 2 && (strncmp(argv[1], "gemini://", 9) || strlen(argv[1]) > 1022))
         exit_with_failure("please provide a valid and reasonably sized gemini:// url");
 
     gemini_browser_create(&globals.browser, on_server_input);
@@ -432,7 +429,7 @@ int main(int argc, char **argv)
     globals.status_bar = newwin(1, viewer_width, 0, viewer_x);
 
     refresh();
-    navigate_to_url(argv[1]);
+    navigate_to_url((argc == 2) ? argv[1] : HOME_URL);
 
     int c;
     while ((c = getch()) != EXIT_KEY)

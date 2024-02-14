@@ -36,5 +36,6 @@
 #define VIEWER_WIDTH 90
 // Please make sure to insert a space right after the program
 #define WEB_BROWSER_COMMAND "firefox "
+#define HOME_URL "gemini://geminiprotocol.net/"
 
 #endif
