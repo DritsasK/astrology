@@ -21,11 +21,11 @@
 #include <unistd.h>
 
 // Some global, statically allocated strings for the implementation of some simple error handling
-static char* error_format = "# Astrology: Gemini Request Failed\n> Error Details: %s"
+static char *error_format = "# Astrology: Gemini Request Failed\n> Error Details: %s"
     " If the error persists and does not occur on any other Gemini client, please report it!"
     " As of now, you can just revert to the previous history entry and continue browsing.";
 
-static char* gemini_error_mappings[TOTAL_GEMINI_ERRORS] = {
+static char *gemini_error_mappings[TOTAL_GEMINI_ERRORS] = {
     [GEMINI_IP_RESOLVE_FAILURE] = "Failed to resolve the IP address of the server.",
     [GEMINI_SERVER_CONNECTION_FAILURE] = "Failed to establish a simple TCP connection with the server.",
     [GEMINI_TEMPORARY_FAILURE] = "The server encountered a temporary failure.",
@@ -151,7 +151,7 @@ void browser_destroy(gemini_browser_t *browser)
 void gemini_browser_get_link_under_cursor(gemini_browser_t *browser, browser_link_t *link)
 {
     // A static enum list to associate link types with schemes
-    static char* scheme_mappings[TOTAL_SCHEMES] = {
+    static char *scheme_mappings[TOTAL_SCHEMES] = {
         [LINK_SCHEME_GEMINI] = "gemini://",
         [LINK_SCHEME_HTTP] = "http://",
         [LINK_SCHEME_HTTPS] = "https://"
