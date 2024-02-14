@@ -18,13 +18,14 @@
 #include "browser.h"
 #include "common.h"
 #include <ctype.h>
+#include <unistd.h>
 
-// Some globals, statically allocated strings for the implementation of some simple error handling
+// Some global, statically allocated strings for the implementation of some simple error handling
 static char* error_format = "# Astrology: Gemini Request Failed\n> Error Details: %s"
     " If the error persists and does not occur on any other Gemini client, please report it!"
     " As of now, you can just revert to the previous history entry and continue browsing.";
 
-static char* gemini_error_mappings[TOTAL_GEMINI_STATUSES] = {
+static char* gemini_error_mappings[TOTAL_GEMINI_ERRORS] = {
     [GEMINI_IP_RESOLVE_FAILURE] = "Failed to resolve the IP address of the server.",
     [GEMINI_SERVER_CONNECTION_FAILURE] = "Failed to establish a simple TCP connection with the server.",
     [GEMINI_TEMPORARY_FAILURE] = "The server encountered a temporary failure.",
@@ -46,6 +47,34 @@ static void page_deallocator(void *data)
 
 void gemini_browser_create(gemini_browser_t *browser, gemini_input_callback_t input_callback)
 {
+    // Load in the booksmarks into memory
+    // Ensure that the file actually exists
+    // If it does not, it will be created right before the program terminates
+    if (access("bookmarks", F_OK) >= 0)
+    {
+        FILE *bookmarks_file = fopen("bookmarks", "r");
+        if (!bookmarks_file)
+            exit_with_failure("failed to open booksmarks file, although it does exist");
+
+        char *line = NULL;
+        size_t len = 0;
+        size_t bytes_read;
+        for (int i = 0; i != 9 && (bytes_read = getline(&line, &len, bookmarks_file)) != -1; i++)
+        {
+            // If the line is empty, just ignore it
+            if (bytes_read < 3) continue;
+
+            // Ignore the new line character located at the end
+            if (line[bytes_read - 1] == '\n')
+                bytes_read--;
+        
+            strncpy(browser->bookmarks[i], line, bytes_read);
+        }
+
+        free(line);
+        fclose(bookmarks_file);
+    }
+    
     // The SSL context will describe how future SSL connection will be created
     // The latest TLS method will be used
     SSL_load_error_strings();
@@ -70,15 +99,15 @@ void gemini_browser_load_document(gemini_browser_t *browser, char *gemini_url)
     page->document = gemini_fetch_document(browser->ssl_ctx, gemini_url, browser->input_callback);
 
     /*
-     * Check if any errors where encountered
+     * Check if any errors were encountered
      * The program will notify the user by inserting the notice into the document
      * The frontend is not required to take any further action
      */
-    if (page->document->status != GEMINI_OK)
+    if (page->document->error != GEMINI_OK)
     {
-        char *error_message = gemini_error_mappings[page->document->status];
+        char *error_message = gemini_error_mappings[page->document->error];
         
-        size_t error_buffer_length = strlen(error_format) - 2 + strlen(error_message);
+        size_t error_buffer_length = strlen(error_format) - strlen("%s") + strlen(error_message);
         page->document->content = dyn_array_create(error_buffer_length + 1, sizeof(char));
 
         sprintf(page->document->content, error_format, error_message);
@@ -94,6 +123,29 @@ void gemini_browser_load_document(gemini_browser_t *browser, char *gemini_url)
 void gemini_browser_go_back(gemini_browser_t *browser)
 {
     doubly_linked_delete_head(&browser->pages);
+}
+
+void browser_destroy(gemini_browser_t *browser)
+{
+    // Just save the modified bookmarks into the file again
+    FILE *bookmarks_file = fopen("bookmarks", "w");
+    if (!bookmarks_file)
+        exit_with_failure("failed to open bookmarks file while trying to save");
+
+    for (int i = 0; i < 9; i++)
+    {
+        if (browser->bookmarks[i][0])
+        {
+            fwrite(browser->bookmarks[i], sizeof(char), strlen(browser->bookmarks[i]), bookmarks_file);
+        }
+
+        // Separate lines with a newline
+        fputc('\n', bookmarks_file);
+    }
+
+    fclose(bookmarks_file);
+    doubly_linked_destroy(&browser->pages);
+    SSL_CTX_free(browser->ssl_ctx);
 }
 
 void gemini_browser_get_link_under_cursor(gemini_browser_t *browser, browser_link_t *link)
@@ -128,13 +180,13 @@ void gemini_browser_get_link_under_cursor(gemini_browser_t *browser, browser_lin
         link->scheme = LINK_SCHEME_GEMINI;
         link->content = join_strings_together(
             hostname, strlen(hostname),
-            &content[start], link->length);
+            content + start, link->length);
         
         free(hostname);
         return;
     }
 
-    // Otherwise, check if the URL contains a protocol scheme
+    // Otherwise, check if the link contains a protocol scheme itself
     // No need to check every single character, just pick the first eight
     bool has_protocol = false;
     
@@ -176,8 +228,6 @@ void gemini_browser_get_link_under_cursor(gemini_browser_t *browser, browser_lin
             if (browser_url[i] == '/')
             {
                 link->scheme = LINK_SCHEME_GEMINI;
-
-                // Just append to that base the path the cursor
                 link->content = join_strings_together(
                     browser_url, i +  1,
                     content + start, end - start + 1);

@@ -33,7 +33,7 @@ enum
 
 struct
 {
-    // This structure will manage all gemtext documents
+    // This structure will manage all TLS connections and parse the data
     // This file will only be dedicated to rendering that data onto the screen
     gemini_browser_t browser;
 
@@ -81,39 +81,38 @@ static int get_element_type_attributes(gemtext_line_e type)
     }
 }
 
-// Returns the current y_offset of the window
-// Will append another line feed so future paragraphs can be inserted properly
+// Returns the new y_offset of the window after the given xtext buffer has been appended
 static int print_text_with_word_breaks(size_t y_offset, char *buffer, size_t length)
 {
-    size_t index = 0;
+    size_t buffer_index = 0;
     size_t x_offset = 0;
     size_t width = getmaxx(globals.document_viewer);
     
     for (;;)
     {
         // Get the boundary of the next word
-        size_t word_end = index;
+        size_t word_end = buffer_index;
         while (word_end < length && !isspace(buffer[word_end])) word_end++;
 
         // Check if the word fits on the current line
-        if (x_offset + (word_end - index + 1) > width)
+        if (x_offset + (word_end - buffer_index + 1) > width)
         {
             x_offset = 0;
             y_offset++;
         }
         
         mvwprintw(globals.document_viewer, y_offset, x_offset, "%.*s",
-                  word_end - index + 1, buffer + index);
+                  word_end - buffer_index + 1, buffer + buffer_index);
 
-        x_offset += word_end - index + 1;
+        x_offset += word_end - buffer_index + 1;
 
         // Check if the printing is done
-        index = word_end + 1;
-        if (index > length - 1)
+        buffer_index = word_end + 1;
+        if (buffer_index > length - 1)
             break;
     }
 
-    return y_offset + 1;
+    return y_offset;
 }
 
 static void refresh_document_viewer(void)
@@ -137,10 +136,11 @@ static void refresh_document_viewer(void)
         int attrs = get_element_type_attributes(line->type);
         
         wattron(globals.document_viewer, attrs);
-        y_offset = print_text_with_word_breaks(y_offset, document->content + line->start, line->end - line->start + 1);
+        // Add one to the offset because each gemini element represents a separate line
+        y_offset = print_text_with_word_breaks(y_offset, document->content + line->start, line->end - line->start + 1) + 1;
         wattroff(globals.document_viewer, attrs);
 
-         // Some elements require some extra spacing to improve readability
+        // Some elements require some extra spacing to improve readability
         switch (line->type)
         {
         case GEMTEXT_PARAGRAPH:
@@ -153,7 +153,8 @@ static void refresh_document_viewer(void)
 
         case GEMTEXT_LINK:
         case GEMTEXT_LIST_ITEM:
-            // If this is the last link or list item on a chain, add some spacing at the bottom
+        case GEMTEXT_PREFORMATTED:
+            // If this is the element of a chain, add some spacing at the bottom
             if (i != DYN_ARRAY_LENGTH(document->elements) - 1 &&
                 document->elements[i + 1].type != line->type)
             {
@@ -173,16 +174,13 @@ static void refresh_document_viewer(void)
 static void navigate_to_url(char *gemini_url)
 {
     set_status("{loading}: connecting to %s", gemini_url);
-    
-    // Navigating to the specified starter page
     gemini_browser_load_document(&globals.browser, gemini_url);
 
     set_status("{browsing} %s", CURRENT_BROWSER_PAGE->document->url);
     refresh_document_viewer();
 }
 
-// Navigate to the link under the cursor
-static void follow_link(void)
+static void follow_link_under_cursor(void)
 {
     browser_link_t link;
     gemini_browser_get_link_under_cursor(&globals.browser, &link);
@@ -196,12 +194,12 @@ static void follow_link(void)
         navigate_to_url(link.content);
     }
     // If it's a webpage, open it up with the default browser
-    // You may want to modify this command at the top of this file
+    // You may want to modify this command via the config.h file
     else if (link.scheme == LINK_SCHEME_HTTP || link.scheme == LINK_SCHEME_HTTPS)
     {
         char *command = join_strings_together(
             WEB_BROWSER_COMMAND, strlen(WEB_BROWSER_COMMAND),
-            link.content, link.length + 1);
+            link.content, link.length);
 
         system(command);
         free(command);
@@ -239,7 +237,7 @@ static void handle_window_resize(void)
         mvwin(globals.status_bar, 0, new_x);
      }
 
-    // Refresh needs to be called here for some reason, even though the screen will be modified again
+    // Refresh needs to be called here, even though the screen will be modified again
     // Otherwise, the window disappears when scaling it down
     refresh();
 
@@ -259,13 +257,15 @@ static void scroll_to(int new_offset)
     refresh_document_viewer();
 }
 
-// Reads user input from the status bar
-// Will save string into the buffer and return the total amount of bytes written
-static size_t collect_user_input(char *buffer, char *prompt, size_t max_length)
+/*
+ * Reads URL input using the status bar as a text box. Special characters will be encoded properly
+ * Will save string into the buffer and return the total amount of bytes written
+ * WARNING: I want to make this generic enough, so no NULL byte will be included
+ */
+static size_t collect_url_from_user(char *buffer, char *prompt, size_t max_length)
 {
     size_t input_length = 0;
     
-    // Print out the prompt to help the user out
     wclear(globals.status_bar);
     wprintw(globals.status_bar, "{%s}: ", prompt);
     wrefresh(globals.status_bar);
@@ -277,7 +277,12 @@ static size_t collect_user_input(char *buffer, char *prompt, size_t max_length)
     int c;
     while ((c = getch()) != '\n')
     {
-        if (isprint(c))
+        if (c == KEY_BACKSPACE && input_length > 0)
+        {
+            mvwdelch(globals.status_bar, 0, offset_x + MIN(input_length, max_visible_length) - 1);
+            input_length--;
+        }
+        else if (isprint(c))
         {
             if (input_length >= max_length) continue;
             
@@ -296,14 +301,8 @@ static size_t collect_user_input(char *buffer, char *prompt, size_t max_length)
                 input_length++;
             }
         }
-        // If the backspace was pressed, move back and delete the last character
-        else if (c == KEY_BACKSPACE && input_length > 0)
-        {
-            mvwdelch(globals.status_bar, 0, offset_x + MIN(input_length - 1, max_visible_length));
-            input_length--;
-        }
 
-        // If we've went past the limit, scroll horizontally
+        // If we've gone past the bar's width, adjust the horizontal scroll
         if (input_length >= max_visible_length)
         {
             scroll_x = input_length - max_visible_length;
@@ -321,10 +320,10 @@ static size_t collect_user_input(char *buffer, char *prompt, size_t max_length)
 
 static void visit_page_of_prompt(void)
 {
-    globals.input_length = collect_user_input(globals.input_buffer, "insert gemini url", 900);
+    globals.input_length = collect_url_from_user(globals.input_buffer, "insert gemini url", 900);
     globals.input_buffer[globals.input_length] = 0;
     
-    // Check if the user inserted a gemini scheme
+    // Check if the user included a gemini scheme
     if (!strncmp(globals.input_buffer, "gemini://", 9))
     {
         navigate_to_url(globals.input_buffer);
@@ -341,11 +340,42 @@ static void visit_page_of_prompt(void)
     }
 }
 
+void scroll_to_next_link(void)
+{
+    size_t start = CURRENT_BROWSER_PAGE->scroll_offset;
+    gemtext_line_t *elements = CURRENT_BROWSER_PAGE->document->elements;
+    size_t index = start + 1;
+    
+    // Start with a forward search
+    while (index != DYN_ARRAY_LENGTH(elements) && elements[index].type != GEMTEXT_LINK) index++;
+    
+    // If nothing was found, wrap around from the start of the document
+    if (index == DYN_ARRAY_LENGTH(elements))
+    {
+        index = 0;
+        while (index != start && elements[index].type != GEMTEXT_LINK) index++;
+        
+        // If neither that worked, quit
+        if (index == start)
+            return;
+    }
+
+    CURRENT_BROWSER_PAGE->scroll_offset = index;
+    refresh_document_viewer();
+}
+
+void navigate_to_host(void)
+{
+    char *host = get_hostname_with_scheme(CURRENT_BROWSER_PAGE->document->url);
+    navigate_to_url(host);
+    free(host);
+}
+
 // Just a thin wrapper around the user input handler so that there is some extra feedback to the user
 size_t on_server_input(char *buffer, char *prompt, size_t max_length)
 {
-    size_t bytes_written = collect_user_input(buffer, prompt, max_length);
-    set_status("{loading} the server is handling the input");
+    size_t bytes_written = collect_url_from_user(buffer, prompt, max_length);
+    set_status("{loading} the server is handling your input");
 
     return bytes_written;
 }
@@ -356,13 +386,13 @@ int main(int argc, char **argv)
     if (argc != 2)
         exit_with_failure("please provide a gemini URL");
 
-    if (strncmp(argv[1], "gemini://", 9))
-        exit_with_failure("please provide a valid gemini:// url");
+    if (strncmp(argv[1], "gemini://", 9) || strlen(argv[1]) > 1022)
+        exit_with_failure("please provide a valid and reasonably sized gemini:// url");
 
     gemini_browser_create(&globals.browser, on_server_input);
 
     /*
-     * The program's structure is flexible enough, so a variety of distinct frontends can be built without much hussle
+     * The program's structure is flexible enough, so a variety of distinct frontends can be built without much work
      * In this version, I will be implementing an ncurses wrapper
      */
     initscr();
@@ -408,45 +438,81 @@ int main(int argc, char **argv)
     while ((c = getch()) != EXIT_KEY)
     {
         gemini_page_t *page = CURRENT_BROWSER_PAGE;
-        
+
         switch (c)
         {
-        case GO_TO_START_KEY: scroll_to(0); break;
-        case GO_TO_BOTTOM_KEY: scroll_to(DYN_ARRAY_LENGTH(page->document->elements) - 1); break;
-        case MOVE_UP_KEY: scroll_to(page->scroll_offset - 1); break;
-        case MOVE_DOWN_KEY: scroll_to(page->scroll_offset + 1); break;
+        case GO_TO_START_KEY: scroll_to(0); continue;
+        case GO_TO_BOTTOM_KEY: scroll_to(DYN_ARRAY_LENGTH(page->document->elements) - 1); continue;
+        case MOVE_UP_KEY: scroll_to(page->scroll_offset - 1); continue;
+        case MOVE_DOWN_KEY: scroll_to(page->scroll_offset + 1); continue;
 
         case PAGE_DOWN_KEY:
             scroll_to(MIN(page->scroll_offset + globals.total_elements_on_view - 1,
                           DYN_ARRAY_LENGTH(page->document->elements) - 1));
-            break;
+            continue;
             
         case FOLLOW_LINK_KEY:
-            follow_link();
-            break;
+            follow_link_under_cursor();
+            continue;
 
         case SEARCH_ENGINE_KEY:
             navigate_to_url("gemini://geminispace.info/search");
-            break;
+            continue;
             
         case GO_BACK_KEY:
-            if (globals.browser.pages.length < 2) break;
+            if (globals.browser.pages.length < 2) continue;
             
             gemini_browser_go_back(&globals.browser);
             set_status("{browsing} %s", CURRENT_BROWSER_PAGE->document->url);
             refresh_document_viewer();
-            break;
+            continue;
 
         case VISIT_PAGE_KEY:
             visit_page_of_prompt();
-            break;
+            continue;
+
+        case NEXT_LINK_KEY:
+            scroll_to_next_link();
+            continue;
+
+        case GO_TO_HOST_KEY:
+            navigate_to_host();
+            continue;
             
         case KEY_RESIZE:
             // Move and scale the UI accordingly to fit in with the new terminal dimensions
             handle_window_resize();
-            break;
+            continue;
+        }
+
+        // Check if the user is trying to access one of the bookmarks
+        if (c >= '1' && c <= '9')
+        {
+            if (globals.browser.bookmarks[c - '1'][0])
+                navigate_to_url(globals.browser.bookmarks[c - '1']);
+            else
+                set_status("{error} the specified bookmark slot has not been set");
+        }
+        // Check if the user is trying to update a bookmark
+        else
+        {
+            char *url = CURRENT_BROWSER_PAGE->document->url;
+            if (!url) continue;
+            
+            static char bookmark_update_bindings[9] = "!@#$%^&*(";
+            
+            for (int i = 0; i < 9; i++)
+            {
+                if (c == bookmark_update_bindings[i])
+                {
+                    strcpy(globals.browser.bookmarks[i], url);
+                    set_status("{update} successfully updated bookmark slot!");
+                    continue;
+                }
+            }
         }
     }
 
+    browser_destroy(&globals.browser);
     endwin();
 }

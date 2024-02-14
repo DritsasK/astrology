@@ -29,6 +29,8 @@
 #define GO_TO_START_KEY 'g'
 #define GO_TO_BOTTOM_KEY 'G'
 #define SEARCH_ENGINE_KEY 's'
+#define NEXT_LINK_KEY 'n'
+#define GO_TO_HOST_KEY 'h'
 
 #define MAX_HISTORY_LENGTH 10
 #define VIEWER_WIDTH 90

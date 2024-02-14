@@ -74,3 +74,17 @@ void doubly_linked_delete_head(doubly_linked_t *list)
 
     list->length--;
 }
+
+void doubly_linked_destroy(doubly_linked_t *list)
+{
+    doubly_node_t *node = list->head;
+
+    while (node)
+    {
+        doubly_node_t *node_to_delete = node;
+        node = node_to_delete->previous;
+
+        list->deallocator(node_to_delete->data);
+        free(node_to_delete);
+    }
+}

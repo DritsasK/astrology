@@ -44,5 +44,6 @@ typedef struct
 void doubly_linked_create(doubly_linked_t *list, size_t max_length, item_deallocator_t deallocator);
 void doubly_linked_insert_first(doubly_linked_t *list, void *data);
 void doubly_linked_delete_head(doubly_linked_t *list);
+void doubly_linked_destroy(doubly_linked_t *list);
 
 #endif

@@ -32,6 +32,7 @@ typedef void* dyn_array_t;
 
 // Will return a pointer for both read and write operations
 #define DYN_ARRAY_GET_ATTRIBUTE(array, attr) ((size_t*) array - DYN_ARRAY_HEADER_SIZE + attr)
+
 #define DYN_ARRAY_LENGTH(array) *DYN_ARRAY_GET_ATTRIBUTE(array, DYN_ARRAY_LENGTH)
 #define DYN_ARRAY_GET_LAST(array) array[DYN_ARRAY_LENGTH(array) - 1];
 
@@ -41,11 +42,11 @@ typedef void* dyn_array_t;
 dyn_array_t dyn_array_create(size_t initial_capacity, size_t item_size);
 
 // Prepares the addition of items into the array by allocating enough memory
-// Will resize if needed, so a reassignment is once needed
+// Will resize if needed, so a reassignment is needed
 dyn_array_t dyn_array_resize_to_fit(dyn_array_t array, size_t total_items);
 
 // Will make sure that there is enough memory to create a new item
-// Will then increment the array's length. The item should the be written via DYN_ARRAY_GET_LAST
+// Will then increment the array's length. The new item should then be written via &DYN_ARRAY_GET_LAST()
 dyn_array_t dyn_array_prepare_new_item(dyn_array_t array);
 
 void dyn_array_destroy(dyn_array_t array);

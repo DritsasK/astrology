@@ -24,9 +24,7 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) < (b) ? (b) : (a))
 
-#define ARRAY_LENGTH(array) (sizeof(array) / sizeof(array[0]))
-
-// Allocates memory and concatenates the string together
+// Allocates memory and concatenates the strings together
 // The return value must be freed
 char* join_strings_together(char *first, size_t first_len, char *second, size_t second_len);
 

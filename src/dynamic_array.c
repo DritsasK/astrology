@@ -61,7 +61,7 @@ dyn_array_t dyn_array_prepare_new_item(dyn_array_t array)
 
 void dyn_array_destroy(dyn_array_t array)
 {
-    // Just clear up the initial allocated memory
+    // Just clear up the initially allocated memory
     // Make sure to call free at the actual start, not the API-friendly position
     free(array - DYN_ARRAY_HEADER_SIZE * sizeof(size_t));
 }

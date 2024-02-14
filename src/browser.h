@@ -43,18 +43,12 @@ typedef enum
 
 typedef struct
 {
-    char *content;
-    size_t length;
-    link_scheme_e scheme;
-} browser_link_t;
-
-typedef struct
-{
     // The same context will be used throughout all gemini connections
     SSL_CTX *ssl_ctx;
 
     doubly_linked_t pages;
     gemini_input_callback_t input_callback;
+    char bookmarks[9][1024];
 } gemini_browser_t;
 
 // This function must be called before any document has been loaded
@@ -62,6 +56,15 @@ void gemini_browser_create(gemini_browser_t *browser, gemini_input_callback_t in
 
 void gemini_browser_load_document(gemini_browser_t *browser, char *gemini_url);
 void gemini_browser_go_back(gemini_browser_t *browser);
+void browser_destroy(gemini_browser_t *browser);
+
+// A frindly API to access different forms of links parsed by the browser
+typedef struct
+{
+    char *content;
+    size_t length;
+    link_scheme_e scheme;
+} browser_link_t;
 
 void gemini_browser_get_link_under_cursor(gemini_browser_t *browser, browser_link_t *link);
 void browser_link_destroy(browser_link_t *link);
