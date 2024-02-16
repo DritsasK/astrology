@@ -17,6 +17,7 @@
 
 #include "doubly_linked.h"
 #include <stdlib.h>
+#include <stdio.h>
 
 void doubly_linked_create(doubly_linked_t *list, size_t max_length, item_deallocator_t deallocator)
 {
@@ -51,7 +52,8 @@ void doubly_linked_insert_first(doubly_linked_t *list, void *data)
     {
         doubly_node_t *node_to_delete = list->tail;
         list->tail = list->tail->next;
-
+        list->tail->previous = NULL;
+        
         list->deallocator(node_to_delete->data);
         free(node_to_delete);
 
@@ -68,7 +70,8 @@ void doubly_linked_delete_head(doubly_linked_t *list)
 
     doubly_node_t *node_to_delete = list->head;
     list->head = list->head->previous;
-
+    list->head->next = NULL;
+    
     list->deallocator(node_to_delete->data);
     free(node_to_delete);
 
