@@ -40,8 +40,8 @@ static char *gemini_error_mappings[TOTAL_GEMINI_ERRORS] = {
 static void page_deallocator(void *data)
 {
     gemini_page_t *page = (gemini_page_t*) data;
-
     gemini_document_destroy(page->document);
+
     free(page);
 }
 
@@ -166,74 +166,32 @@ void gemini_browser_get_link_under_cursor(gemini_browser_t *browser, browser_lin
     if (element->type != GEMTEXT_LINK)
         return;
 
-    // First, get the boundaries of the URL
+    // First, extract the actual link content into a separate string
     int start, end;
     for (start = element->start + 2; isspace(content[start]); start++);
     for (end = start; end != element->end && !isspace(content[end + 1]); end++);
-    link->length = end - start + 1;
 
-    // Handle the easy case first:
-    // If the link is relative to the hostname, append it to the active URL
-    if (content[start] == '/')
+    char *link_string = malloc(end - start + 2);
+    strncpy(link_string, page->document->content + start, end - start + 1);
+    link_string[end - start + 1] = 0;
+
+    if (has_protocol_scheme(link_string))
     {
-        char *hostname = get_hostname_with_scheme(page->document->url);
-        link->scheme = LINK_SCHEME_GEMINI;
-        link->content = join_strings_together(
-            hostname, strlen(hostname),
-            content + start, link->length);
-        
-        free(hostname);
-        return;
+        link->content = link_string;
     }
-
-    // Otherwise, check if the link contains a protocol scheme itself
-    // No need to check every single character, just pick the first eight
-    bool has_protocol = false;
-    
-    for (int i = start; i < MIN(end, start + 8); i++)
-    {
-        if (content[i] == ':')
-        {
-            has_protocol = true;
-            break;
-        }
-    }
-
-    if (has_protocol)
-    {
-        // Find the type of the link
-        for (int i = 0; i < TOTAL_SCHEMES; i++)
-        {
-            if (!strncmp(content + start, scheme_mappings[i], strlen(scheme_mappings[i])))
-            {
-                char *new_url = malloc(link->length + 1);
-                strncpy(new_url, content + start, link->length);
-                new_url[link->length] = 0;
-
-                link->content = new_url;
-                link->scheme = i;
-                return;
-            }
-        }
-    }
-    // If it does not contain a protocol but it isn't relative either,
-    // it must be pointing to another location at the current directory
     else
     {
-        char *browser_url = page->document->url;
-        size_t browser_url_len = strlen(browser_url);
-            
-        for (int i = browser_url_len; i > 0; i--)
-        {
-            if (browser_url[i] == '/')
-            {
-                link->scheme = LINK_SCHEME_GEMINI;
-                link->content = join_strings_together(
-                    browser_url, i +  1,
-                    content + start, end - start + 1);
+        link->content = join_relative_link_to_url(page->document->url, link_string);
+        free(link_string);
+    }
 
-                return;
-            }
+    // Find out the type of the link's scheme
+    for (int i = 0; i < TOTAL_SCHEMES; i++)
+    {
+        if (!strncmp(link->content, scheme_mappings[i], strlen(scheme_mappings[i])))
+        {
+            link->scheme = i;
+            return;
         }
     }
 }

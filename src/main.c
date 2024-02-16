@@ -199,7 +199,7 @@ static void follow_link_under_cursor(void)
     {
         char *command = join_strings_together(
             WEB_BROWSER_COMMAND, strlen(WEB_BROWSER_COMMAND),
-            link.content, link.length);
+            link.content, strlen(link.content));
 
         system(command);
         free(command);

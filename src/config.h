@@ -32,7 +32,7 @@
 #define NEXT_LINK_KEY 'n'
 #define GO_TO_HOST_KEY 'h'
 
-#define MAX_HISTORY_LENGTH 10
+#define MAX_HISTORY_LENGTH 20
 #define VIEWER_WIDTH 90
 // Please make sure to insert a space right after the program
 #define WEB_BROWSER_COMMAND "firefox "

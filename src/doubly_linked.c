@@ -50,7 +50,7 @@ void doubly_linked_insert_first(doubly_linked_t *list, void *data)
     if (list->length == list->max_length - 1)
     {
         doubly_node_t *node_to_delete = list->tail;
-        list->tail = list->tail->previous;
+        list->tail = list->tail->next;
 
         list->deallocator(node_to_delete->data);
         free(node_to_delete);

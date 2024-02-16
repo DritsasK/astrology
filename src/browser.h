@@ -31,16 +31,6 @@ typedef struct
     int scroll_offset;
 } gemini_page_t;
 
-typedef enum
-{
-    LINK_SCHEME_GEMINI,
-    LINK_SCHEME_HTTP,
-    LINK_SCHEME_HTTPS,
-    TOTAL_SCHEMES,
-    
-    LINK_SCHEME_INVALID
-} link_scheme_e;
-
 typedef struct
 {
     // The same context will be used throughout all gemini connections
@@ -58,11 +48,20 @@ void gemini_browser_load_document(gemini_browser_t *browser, char *gemini_url);
 void gemini_browser_go_back(gemini_browser_t *browser);
 void browser_destroy(gemini_browser_t *browser);
 
-// A frindly API to access different forms of links parsed by the browser
+// A friendly API to access different forms of links parsed by the browser
+typedef enum
+{
+    LINK_SCHEME_GEMINI,
+    LINK_SCHEME_HTTP,
+    LINK_SCHEME_HTTPS,
+    TOTAL_SCHEMES,
+    
+    LINK_SCHEME_INVALID
+} link_scheme_e;
+
 typedef struct
 {
     char *content;
-    size_t length;
     link_scheme_e scheme;
 } browser_link_t;
 

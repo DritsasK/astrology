@@ -72,7 +72,6 @@ typedef size_t (*gemini_input_callback_t) (char *buffer, char *prompt, size_t ma
 // Initializes and populates a gemini document by accessing the provided server using the Gemini protocol
 gemini_document_t* gemini_fetch_document(SSL_CTX *ctx, char *gemini_url, gemini_input_callback_t input_callback);
 void gemini_document_parse_gemtext(gemini_document_t *document);
-
 void gemini_document_destroy(gemini_document_t *document);
 
 #endif

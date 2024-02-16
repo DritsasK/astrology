@@ -19,6 +19,7 @@
 #define _COMMON_H
 
 #include <stddef.h>
+#include <stdbool.h>
 
 // A collection of some handy macros
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -28,9 +29,15 @@
 // The return value must be freed
 char* join_strings_together(char *first, size_t first_len, char *second, size_t second_len);
 
-// The url must include a scheme
-// Make sure to free the returned value
+// The url must strictly include a scheme
+// The final slash character (if it exists) is not considered part of it
+int get_hostname_length(char *url);
+
+// The final slash (if it does exist) will not be included
 char* get_hostname_with_scheme(char *url);
+
+bool has_protocol_scheme(char *url);
+char* join_relative_link_to_url(char *current_url, char *link);
 
 void exit_with_failure(const char *format, ...);
 

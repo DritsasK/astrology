@@ -34,24 +34,77 @@ char* join_strings_together(char *first, size_t first_len, char *second, size_t 
     return result;
 }
 
-char* get_hostname_with_scheme(char *url)
+int get_hostname_length(char *url)
 {
     char *colon = strchr(url, ':');
     // Skip the first two scheme slashes and find the host
     char *slash = strchr(colon + 3, '/');
+
+    return slash ? slash - url : strlen(url);
+}
+
+char* get_hostname_with_scheme(char *url)
+{
+    int hostname_length = get_hostname_length(url);
     
-    if (slash)
+    if (hostname_length != strlen(url))
     {
-        size_t slash_offset = slash - url;
-        char *hostname = malloc((slash_offset + 1) * sizeof(char));
-        strncpy(hostname, url, slash_offset);
-        hostname[slash_offset] = 0;
+        char *hostname = malloc((hostname_length + 1) * sizeof(char));
+        strncpy(hostname, url, hostname_length);
+        hostname[hostname_length] = 0;
 
         return hostname;
     }
 
-    // No slash was found, return as is
+    // No extra slash was found, return as is
     return strdup(url);
+
+}
+
+bool has_protocol_scheme(char *url)
+{
+    bool has_protocol = false;
+
+    // No need to check every single character, just pick the first eight
+    for (int i = 0; url[i] && i < 8; i++)
+    {
+        if (url[i] == ':')
+        {
+            has_protocol = true;
+            break;
+        }
+    }
+
+    return has_protocol;
+}
+
+char* join_relative_link_to_url(char *current_url, char *link)
+{
+    // Check if the link is relative to the hostname
+    if (link[0] == '/')
+    {
+        int host_length = get_hostname_length(current_url);
+        return join_strings_together(
+            current_url, host_length,
+            link, strlen(link));
+    }
+
+    // Otherwise, it must be relative to the current directory
+    // A link of `note.gmi` - without a starting slash - is an example of such case
+    else
+    {
+        size_t base_url_len = strlen(current_url);
+            
+        for (int i = base_url_len; i > 0; i--)
+        {
+            if (current_url[i] == '/')
+            {
+                return join_strings_together(
+                    current_url, i + 1,
+                    link, strlen(link));
+            }
+        }
+    }
 }
 
 void exit_with_failure(const char *format, ...)

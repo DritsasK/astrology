@@ -289,9 +289,19 @@ gemini_document_t* gemini_fetch_document(SSL_CTX *ctx, char *gemini_url, gemini_
         SSL_shutdown(ssl);
         SSL_free(ssl);
         close(connection);
-
-        return gemini_fetch_document(ctx, meta, input_callback);
-
+        
+        // If the URL is absolute, just go there
+        if (has_protocol_scheme(meta))
+            return gemini_fetch_document(ctx, meta, input_callback);
+        else
+        {
+            char *new_url = join_relative_link_to_url(gemini_url, meta);
+            gemini_document_t *document = gemini_fetch_document(ctx, new_url, input_callback);
+            
+            free(new_url);
+            return document;
+        }
+        
     case '4':
         // Identical requests may succeed in the future, so the user can retry
         error = GEMINI_TEMPORARY_FAILURE;
@@ -347,7 +357,7 @@ fetch_failed:
 
 void gemini_document_destroy(gemini_document_t *document)
 {
-    free(document->url);
     dyn_array_destroy(document->content);
     dyn_array_destroy(document->elements);
+    free(document->url);
 }
