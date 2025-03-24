@@ -219,8 +219,17 @@ gemini_document_t* gemini_fetch_document(SSL_CTX *ctx, char *gemini_url, gemini_
         goto fetch_failed;
     }
 
-    // NOTE: This is where I should have been validating the server's certificate
-    // I might implement TOFU certificates in the future
+#ifdef WITH_SSL_CERT
+
+    // Certificate verification
+    if (SSL_get_verify_result(ssl) != X509_V_OK) {
+        error = GEMINI_TLS_HANDSHAKE_FAILURE;
+        goto fetch_failed;
+    }
+
+#endif
+
+        // I might implement TOFU certificates in the future
     
     // 1029 is the maximum size of the server response header (plus a NULL byte)
     // This buffer will be used for both auxiliary input and output storage

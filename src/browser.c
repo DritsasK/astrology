@@ -85,6 +85,17 @@ void gemini_browser_create(gemini_browser_t *browser, gemini_input_callback_t in
     if (!browser->ssl_ctx)
         exit_with_failure("failed to initialize TLS client context");
 
+#ifdef WITH_SSL_CERT
+        // If WITH_SSL_CERT is defined then load the CA certificates for verification
+    
+    if (!SSL_CTX_load_verify_locations(browser->ssl_ctx, CERTIFICATION_PATH, NULL))
+        exit_with_failure("failed to load CA certificates");
+    
+    // Set the verification mode to for a valid certificate
+    SSL_CTX_set_verify(browser->ssl_ctx, SSL_VERIFY_PEER, NULL);
+    
+#endif
+
     // Initializing the pages doubly linked list that will act as a history recorder
     doubly_linked_create(&browser->pages, MAX_HISTORY_LENGTH, page_deallocator);
 

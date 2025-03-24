@@ -38,4 +38,12 @@
 #define WEB_BROWSER_COMMAND "firefox "
 #define HOME_URL "gemini://geminiprotocol.net/"
 
+
+// Uncomment the line below to enable tls certification 
+//#define WITH_SSL_CERT
+
+#ifdef WITH_SSL_CERT
+#define CERTIFICATION_PATH "/etc/ssl/cert.pem"
+#endif
+
 #endif
